@@ -7,7 +7,7 @@
 
 ## Participate
 
-- https://github.com/WICG/CHIPS/issues
+- https://github.com/privacycg/CHIPS/issues
 
 ## Interested in the CHIPS Origin Trial?
 
@@ -33,7 +33,6 @@ For more information about the design of the Origin-Trial, see the [documentatio
 - [Design Principles](#design-principles)
     - [Opt-in partitioned cookies](#opt-in-partitioned-cookies)
     - [Only sent over secure protocols](#only-sent-over-secure-protocols)
-    - [Hostname-bound](#hostname-bound)
     - [Avoid a large memory footprint](#avoid-a-large-memory-footprint)
 - [Detailed Design](#detailed-design)
     - [Partitioning model](#partitioning-model)
@@ -45,10 +44,9 @@ For more information about the design of the Origin-Trial, see the [documentatio
         - [Third-party customer support widgets](#third-party-customer-support-widgets)
         - [CDN load balancing](#cdn-load-balancing)
     - [How to enforce design principles](#how-to-enforce-design-principles)
-        - [Partitioned cookies must use the `__Host-` prefix](#partitioned-cookies-must-use-the-__host--prefix)
+        - [`Secure` attribute](#secure-attributes)
         - [`HttpOnly` attribute](#httponly-attribute)
         - [`SameSite` attribute](#samesite-attribute)
-        - [`SameParty` attribute](#sameparty-attribute)
         - [Limit the number of cookies a third party can use in a single partition](#limit-the-number-of-cookies-a-third-party-can-use-in-a-single-partition)
     - [Clearing partitioned cookies](#clearing-partitioned-cookies)
     - [CookieStore API](#cookiestore-api)
@@ -60,13 +58,10 @@ For more information about the design of the Origin-Trial, see the [documentatio
         - [Extension pages](#extension-pages)
         - [Background contexts](#background-contexts)
     - [First-Party CHIPS](#first-party-chips)
-    - [CHIPS and First-Party Sets](#chips-and-first-party-sets)
 - [Security and Privacy Considerations](#security-and-privacy-considerations)
 - [Alternate Designs for CHIPS](#alternate-designs-for-chips)
     - [Limit the number of cookies in a partition](#limit-the-number-of-cookies-in-a-partition)
     - [Applying the 180 cookies-per-domain limit](#applying-the-180-cookies-per-domain-limit)
-    - [Requiring the `__Secure-` prefix](#requiring-the-__secure--prefix)
-    - [Not requiring the `__Host-` prefix](#not-requiring-the-__host--prefix)
     - [DNS CNAME’ing](#dns-cnameing)
 - [References and Acknowledgements](#references-and-acknowledgements)
     - [Acknowledgements](#acknowledgements)
@@ -191,7 +186,7 @@ This would enable `embed.maps.com` to store user preferences with cookies withou
 Consider `retail.com` has noticed that users are having trouble signing up for an account and navigating through the site's purchase flow.
 The owners of `retail.com` contract a third party, `support.chat.com`, to embed a chat widget on `retail.com` to help users who need support.
 
-When a user is intercting with `support.chat.com`'s widget, they set a session cookie to continue conversations between top-level page navigations:
+When a user is interacting with `support.chat.com`'s widget, they set a session cookie to continue conversations between top-level page navigations:
 
 ```
 Set-Cookie: __Host-coversationid=a3e70; SameSite=None; Secure; HttpOnly; Path=/;
@@ -284,17 +279,11 @@ See the [Partition all third-party cookies by default](#partition-all-third-part
 Partitioned cookies must only be set by and sent over secure protocols.
 This helps address some aspects of cookies' [weak confidentiality](https://tools.ietf.org/html/draft-ietf-httpbis-rfc6265bis-07#section-8.5) and [weak integrity](https://tools.ietf.org/html/draft-ietf-httpbis-rfc6265bis-07#section-8.6).
 
-### Hostname-bound
-
-Partitioned cookies should also be hostname bound.
-This and the requirement partitioned cookies be sent over secure protocols makes partitioned cookies as close to origin-bound as possible.
-We would like to have user agents scope partitioned cookies by port as well, making them origin-scoped, but we think this requirement should only be enforced if/when [Origin-Bound Cookies](https://github.com/sbingler/Origin-Bound-Cookies) is enabled.
-
 ### Avoid a large memory footprint
 
 One concern about introducing partitioned cookies is the proliferation of state on users' machines.
-With unpartitioned third-party cookies, a single third party only needed to set one cookie on a user's machines which could be used for cross-site requests across all top-level sites a user visits.
-After unpartitioned third-party cookies are removed, a third party will need to set one cookie per top-level context that the user visits, resulting in more cookies set on user's machines.
+With unpartitioned third-party cookies, a single third party only needed to set one cookie on a user's machine which could be used for cross-site requests across all top-level sites a user visits.
+After unpartitioned third-party cookies are removed, a third party will need to set one cookie per top-level context that the user visits, resulting in more cookies set on users' machines.
 
 Browsers that wish to support partitioned cookies must impose additional limitations on the number of cookies available to a third-party domain per-partition.
 
@@ -338,13 +327,11 @@ This algorithm could be added to [section 5.3 of RFC6265bis](https://datatracker
 1.  Append an attribute to the cookie-attribute-list with an attribute-name of "PartitionKey" and an attribute-value of "partition-key".
 
 Below is the algorithm for storing `Partitioned` cookies.
-These steps could be added to [section 5.4 of RFC6265bis](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis-07#section-5.4) after the user agent processes the cookie's __Host- prefix.
+These steps could be added to [section 5.4 of RFC6265bis](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis-07#section-5.4) after after the user agent checks for the `__Host-` prefix.
 
 1.  If the cookie-attribute-list contains an attribute with an attribute-name of "PartitionKey" and the attribute-value is null, then skip the following steps and insert the cookie into the cookie store.
 
-1.  If the cookie-name does not start with a case-sensitive match for the string "__Host-", then abort the following steps and ignore the cookie entirely.
-
-1.  If the cookie line also contains the [`SameParty` attribute](https://github.com/cfredric/sameparty) (the exact semantics of how the `SameParty` attribute is loaded into the cookie-attribute-list is TBD) then abort the following steps and ignore the cookie entirely.
+1. If the cookie-attribute-list does not contain an attribute with an attribute-name of `Secure` then abort these steps and ignore the cookie entirely.
 
 1.  Set the cookie's partition-key to the attribute-value of the element in the attribute-list whose attribute-name is "PartitionKey".
 
@@ -430,14 +417,9 @@ When the browser navigates to another top-level site, then subsequent requests t
 
 ### How to enforce design principles
 
-#### Partitioned cookies must use the `__Host-` prefix
+#### `Secure` attribute
 
-User agents must only accept Partitioned cookies which have the `__Host-` prefix.
-
-The `__Host-` prefix requires that the cookie be set with `Secure` and `Path=/` and disallows the `Domain` attribute.
-These requirements ensure that partitioned cookies only be set from and sent to secure origins only.
-It also would disallow `Domain` cookies which can be shared between different third-party subdomains within a partition.
-This requirement make partitioned cookies be as close to third-party origin-bound as possible.
+User agent must reject any cookie set with `Partitioned` that does not also include the `Secure`.
 
 #### `HttpOnly` attribute
 
@@ -450,15 +432,13 @@ User agents may only accept `Partitioned` cookies if their `SameSite` attribute 
 
 **Note:** a `Partitioned` cookie without `SameSite=None` is effectively just a same-site cookie which cannot be sent in a third-party context anyway.
 
-#### `SameParty` attribute
-
-User agents should reject any cookie set with both `Partitioned` and `SameParty` attributes.
-
 #### Limit the number of cookies a third party can use in a single partition
 
 A third-party domain's cookie jar should have a much lower per-partition size limit than existing garbage collection thresholds ([180 cookies per domain](https://source.chromium.org/chromium/chromium/src/+/master:net/cookies/cookie_monster.h;l=104;drc=da465ccade3a693e1deac3bf01b1c83d12dbf553) in Chrome).
 User agents must limit third-party domains to just one or some small number of cookies per-partition.
 The number of cookies in a single partition per third-party is scoped by domain so that a third-party could not circumvent this limit by registering new subdomains.
+
+Based on [feedback on this proposal](https://github.com/privacycg/CHIPS/issues/48) that both a lower limit of cookies per-partition as well as a lower maximum size of individual partitioned cookies will pose problems for developers, we suggest a limit based on the total amount of memory used up by cookies of a partitioned site. This limit could be 10 kibibytes.
 
 User agents may enforce some global limit on the number of partitioned cookies in the cookie jar.
 This is to ensure that as a user visits more top-level sites over time that the number of partitioned cookies saved to their machine does not grow over time without bound.
@@ -498,13 +478,13 @@ Partitioned cookies should be accessible regardless of any choices the user has 
 The new cookie attribute will be ignored on older clients that don't recognize it and fall back to default behavior.
 Since these cookies are intended for third-party contexts, [clients that are incompatible with `SameSite=None`](https://www.chromium.org/updates/same-site/incompatible-clients) may reject cookies with `SameSite=None`.
 
-It is also recommended to still include the `__Host-` prefix.
+Although it is not required, it is still recommended to still include the `__Host-` prefix.
 Even clients that do not recognize the `Partitioned` attribute still enforce the semantics of the `__Host-` prefix.
 This would ensure that cross-site cookies are hostname bound and only sent over secure channels, which is still a security win.
 
 ### Memory impact
 
-Based on Chrome data, we estimate limiting a domain to 10 cookies per-partition will satisfy ~99% of existing cross-site cookie use cases on the web today.
+Based on Chrome data, we estimate that 10 cookies per-partition will satisfy ~99% of existing cross-site cookie use cases on the web today.
 Based on Chrome data aggregated over a 28 day period, we estimate partitioning cross-site cookies will increase the cookie jar size ~6% on average for Android Chrome users with at least 25 cookies and ~18% on average for desktop Chrome users with at least 25 cookies.
 
 We find this trade-off between meeting cross-site cookie use cases and memory impact to be acceptable, but user agents may wish to impose additional size limits on the partitioned cookie jar such as a global limit on all partitioned cookies.
@@ -584,7 +564,7 @@ In that case, the attacker could embed `1p.com` into `3p.com`'s frame when `1p.c
 
 ## Security and Privacy Considerations
 
-This proposal takes the opportunity of defining the semantics of a new cookie attribute in order to require the `__Host-` prefix and the `Secure` attribute, restricting this feature to [secure contexts](https://w3c.github.io/webappsec-secure-contexts).
+This proposal takes the opportunity of defining the semantics of a new cookie attribute in order to require the `Secure` attribute, restricting this feature to [secure contexts](https://w3c.github.io/webappsec-secure-contexts).
 
 Sites are more prone to XSS attacks as embedded frames since these contexts rely on cross-site cookies for a notion of user session/state.
 Partitioning cross-site cookies makes XSS attacks less powerful, since an attacker would need to navigate the user's browser to a compromised cookie's top-level site in order for the browser to send the cookie at all.
@@ -602,7 +582,7 @@ One important privacy consideration is that partitioned cookies must not be subj
 
 Another privacy consideration is that the privacy guarantees of partitioned cookies can be circumvented by browser extensions with host permissions.
 Extensions' background contexts can query and store cookies across partitions, meaning they could store a cross-site identifier across partitions.
-Unfortuately, this type of attack is unavoidable due to the nature of extensions.
+Unfortunately, this type of attack is unavoidable due to the nature of extensions.
 Even if we block partitioned cookies (or even all cookies) from extensions' background contexts, an extension could still use content scripts to write cross-site identifiers to the DOM which the site's own script could copy to the site's partitioned cookie jar.
 
 ## Alternate Designs for CHIPS
@@ -641,20 +621,6 @@ When the user returns to a site with an `evil.com` embed, `evil.com` will detect
 How much entropy `evil.com` can learn about a particular user from this type of attack has not been explored.
 Therefore it is not clear what the relative global and per-partition limits would need to be to prevent `evil.com` from learning any identifiable information about users this way.
 
-### Requiring the `__Secure-` prefix
-
-Cookies with the `__Host-` prefix implicitly have the same properties as cookies with the `__Secure-` prefix.
-By requiring partitioned cookies to have the former we guarantee that they also have the same properties as if we required the latter.
-
-### Not requiring the `__Host-` prefix
-
-One alternate design choice is to not require that cookies with the `Partitioned` attribute have a `__Host-` prefix.
-Instead, the semantics of the `Partitioned` attribute would include the semantics of `__Host-` prefix cookies (i.e. requiring `Secure` and `Path=/`, disallowing `Domain`).
-
-We decided against this for two reasons.
-The first is that clients that do not yet recognize the `Partitioned` attribute may still recognize the `__Host-` prefix and can still benefit from its semantics.
-The second is that mixing the semantics of prefixes and attributes is not the right path forward, since it makes the semantics of either more difficult to understand.
-
 ### DNS CNAME’ing
 
 Websites can choose to delegate/alias a subdomain to a third-party service provider using DNS CNAME records.
@@ -679,7 +645,6 @@ We’d like to thank Lily Chen, Steven Bingler, Rowan Merewood, and Jeffrey Yass
 
 ### References
 
-- [cfredric/sameparty](https://github.com/cfredric/sameparty)
 - [Chromium Blog: Building a more private web: A path towards making third party cookies obsolete](https://blog.chromium.org/2020/01/building-more-private-web-path-towards.html)
 - [Clear-Site-Data for partitioned storage can be used for cross-site tracking · Issue #11 · privacycg/storage-partitioning](https://github.com/privacycg/storage-partitioning/issues/11)
 - [Cookie Store API Explainer | cookie-store](https://wicg.github.io/cookie-store/explainer.html)
